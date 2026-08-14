@@ -1,0 +1,6 @@
+{
+  "name": "project-mayhem",
+  "version": "0.1.0",
+  "description": "A drill instructor for your own competence. Teaches any technical topic in the minimum words that convey the maximum signal, then hunts you down later to check you actually kept it.",
+  "keywords": ["learning", "quiz", "spaced-repetition", "interview-prep", "engineering"]
+}

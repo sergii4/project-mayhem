@@ -1,0 +1,13 @@
+{
+  "name": "project-mayhem",
+  "owner": {
+    "name": "project-mayhem"
+  },
+  "plugins": [
+    {
+      "name": "project-mayhem",
+      "source": "./",
+      "description": "A drill instructor for your own competence. Teaches any technical topic in the minimum words that convey the maximum signal, then hunts you down later to check you actually kept it."
+    }
+  ]
+}

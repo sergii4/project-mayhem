@@ -35,7 +35,7 @@ This plugin surfaces due items when a session in scope starts, but it can't reac
 This repo doubles as its own marketplace (`.claude-plugin/marketplace.json`), so no separate catalog repo is needed. From any machine with Claude Code:
 
 ```shell
-/plugin marketplace add <your-github-username>/project-mayhem
+/plugin marketplace add sergii4/project-mayhem
 /plugin install project-mayhem@project-mayhem
 ```
 

@@ -1,38 +1,44 @@
 # project-mayhem
 
-A drill instructor for your own competence. Built for engineering interview prep and technical learning generally — not tied to any specific stack or domain.
+An operational efficiency enforcer for Claude Code. It bounds how the agent spends tool calls, context, and wall time — not how it writes prose or code.
 
-## What it does
+That scope is deliberate. Terse output and minimal code are already well covered by other plugins; what nothing enforces is the operational layer, where the waste actually is: a whole file read to find one function, `grep -r` returning hits in comments, a subagent's raw output dumped into main context, a foreground command that hangs for ten minutes.
 
-- **Compressed, not clipped.** Answers aren't bare fragments — they fuse the why into the what so a fact lands as understanding, not trivia. Still short: no hedging, no filler, no pitch-mode enthusiasm, one next action stated and nothing offered beyond it.
-- **Remembers what you've covered.** Every topic that gets real depth (not a passing mention) gets logged to a knowledge log with a spaced-repetition schedule.
-- **Tests you without being asked.** At the start of any technical session, it checks what's overdue and runs a short check before getting into new material — not a nag screen, just the cost of walking back in.
-- **`/quiz`** — run a quiz on demand: due items and weak spots first, or a specific topic if you name one. Pass doubles the interval, fail resets it to daily.
-- **`/recap`** — a four-line status report: coverage, what's due, your weakest area, and the one next action. Nothing else.
+## What it enforces
 
-## Components
+Everything is delivered through hooks, so it is active from the first message rather than waiting for the model to decide to load a skill. `SessionStart` injects the ruleset in `hooks/rules.md`, and `SubagentStart` injects the same file again because `SessionStart` context does not reach subagents.
 
-| Component | Purpose |
-|---|---|
-| `skills/drill` | Voice + information-diet enforcement across all in-scope conversation, plus silent knowledge-log maintenance and auto-surfacing of overdue items |
-| `skills/quiz` | On-demand spaced-repetition quiz, `/quiz` |
-| `skills/recap` | On-demand status report, `/recap` |
+### Hard limits (the Bash guard)
 
-## Where the knowledge log lives
+`hooks/bash-guard.py` inspects every Bash call and acts on three cases:
 
-`project-mayhem/knowledge-log.md`, either as a doc in your attached Claude Project (if one's attached to the session) or as a local file in your working directory otherwise. It's a plain markdown table — readable and editable by hand if you ever want to fix an entry.
+- **In-place regex edits are denied.** `sed -i`, `sed --in-place`, `perl -pi` and friends. A regex that half-matches corrupts the file silently; the `Edit` tool matches an exact string and fails loudly instead. `ast-grep` is the escalation for structural multi-file rewrites.
+- **Timeouts over 60s are denied**, with the ceiling and both escapes named in the reason.
+- **Slow commands with no timeout are denied** — `npm install`, `docker build`, `mvn`, `pytest` and similar. The reason names both escapes: set a timeout, or run it in the background and poll.
 
-## Scope
+Every check is skipped if the command contains `# mayhem:allow`, so a block is never a dead end.
 
-Any technical topic. There's no fixed domain list — it triggers on technical learning, debugging, and interview-prep conversation generally, and each topic gets tagged with a freeform `Area` label in the log rather than a preset category.
+Every verdict is a deny rather than a silent rewrite, and that is deliberate. `PreToolUse` also supports `updatedInput`, which would let the guard clamp an oversized timeout in place instead of refusing the call. But other plugins rewrite Bash through the same field — rtk prefixes commands that way — and two hooks rewriting one call have undefined precedence, so one of them is dropped with no error. A guard that silently loses is worse than one that makes you retype the timeout.
 
-## Optional: proactive interruptions
+The guard fails open. An unparseable payload or any exception exits cleanly with no output — a broken guard degrades to no guard, never to a broken session.
 
-This plugin surfaces due items when a session in scope starts, but it can't reach into your day uninvited — Cowork sessions only run when you open one. If you want it to actively ping you (e.g. a daily check at a fixed time) rather than waiting for you to start a relevant conversation, set up a scheduled task that fires a `/quiz` or `/recap` prompt into a session on a cron schedule. Ask Claude to set this up if you want it; it's not part of the plugin itself since it depends on your scheduling preferences.
+### Soft limits (the ruleset)
 
-## Install in Claude Code
+The injected rules cover what a hook cannot check: locate with `Grep`/`Glob`/`LSP` and read only to confirm, use `LSP findReferences` rather than `grep -r` for callers, read a slice rather than a whole file, send fan-out searches to a subagent so only the conclusion returns, never re-read a file to verify an edit that already succeeded.
 
-This repo doubles as its own marketplace (`.claude-plugin/marketplace.json`), so no separate catalog repo is needed. From any machine with Claude Code:
+They also close with the rule that keeps the rest from doing damage: thrift never shortens comprehension. A small diff in the wrong place is a second bug, not a saving.
+
+## The 60-second budget, honestly
+
+Hooks cannot preempt a running subagent — `SubagentStart` and `SubagentStop` only fire at the boundaries, and the `Agent` tool has no timeout parameter. So the budget splits three ways by what is actually achievable:
+
+- **Enforced** on Bash, where `PreToolUse` can deny and rewrite. This is where ten-minute freezes usually come from.
+- **A contract** for subagents: the ruleset tells them to return partial results marked as such rather than dig silently past the budget. The model self-polices this.
+- **Measured** after the fact. `SubagentStop` carries no duration, but it does carry the agent's transcript path, and that file's birth-to-last-write span is its wall time. Over 60 seconds, you get a warning; under, silence.
+
+## Install
+
+This repo doubles as its own marketplace (`.claude-plugin/marketplace.json`), so no separate catalog repo is needed:
 
 ```shell
 /plugin marketplace add sergii4/project-mayhem
@@ -41,10 +47,14 @@ This repo doubles as its own marketplace (`.claude-plugin/marketplace.json`), so
 
 If the install summary says `Run /reload-plugins to activate.`, run that.
 
-Skills are namespaced by plugin name, so invoke them directly as `/project-mayhem:quiz` and `/project-mayhem:recap`. `drill` isn't meant to be called directly — it triggers automatically in the background of technical conversation, same as it does in Cowork. Natural language also works: "quiz me" and "recap" trigger the same skills without the slash form.
+Requires `python3` and `jq`, both standard on macOS with Homebrew. Claude Code only — the whole plugin is hooks, and hosts without hook support have nothing to load.
 
-To iterate on the plugin locally before pushing changes, run Claude Code against the working directory instead of the installed copy:
+To iterate locally instead of on the installed copy:
 
 ```shell
-claude --plugin-dir ./project-mayhem
+claude --plugin-dir .
 ```
+
+## Turning it off
+
+Say "stop mayhem" and the injected rules stop applying for the rest of the session. There is no flag file and no state to reset, because nothing re-injects after `SessionStart`. The Bash guard is a hook rather than an instruction, so it keeps running — use `# mayhem:allow` for individual commands, or disable the plugin.

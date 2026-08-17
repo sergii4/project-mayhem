@@ -7,7 +7,7 @@
     {
       "name": "project-mayhem",
       "source": "./",
-      "description": "A drill instructor for your own competence. Teaches any technical topic in the minimum words that convey the maximum signal, then hunts you down later to check you actually kept it."
+      "description": "Operational efficiency enforcer. Bounds how the agent spends tool calls, context, and wall time: AST lookup over grep, the Edit tool over sed, a 60-second budget per unit of work."
     }
   ]
 }

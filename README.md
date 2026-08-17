@@ -49,6 +49,8 @@ If the install summary says `Run /reload-plugins to activate.`, run that.
 
 Requires `python3` and `jq`, both standard on macOS with Homebrew. Claude Code only — the whole plugin is hooks, and hosts without hook support have nothing to load.
 
+Two of the rules lean on tools the hooks themselves do not need. `ast-grep` (`brew install ast-grep`) is the structural-rewrite escalation named in the in-place-edit refusal; without it that refusal leaves only the `Edit` tool, which is exact-string rather than structural. And `LSP`-based lookup needs a language server configured for the file type — it errors out otherwise, which is why the ruleset carries a verified-grep fallback rather than pretending every language is covered.
+
 To iterate locally instead of on the installed copy:
 
 ```shell

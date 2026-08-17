@@ -1,6 +1,6 @@
 {
   "name": "project-mayhem",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Operational efficiency enforcer. Bounds how the agent spends tool calls, context, and wall time: AST lookup over grep, the Edit tool over sed, a 60-second budget per unit of work.",
   "keywords": ["efficiency", "hooks", "tool-discipline", "context", "guardrails"],
   "hooks": "./hooks/hooks.json"

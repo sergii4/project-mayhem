@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """PreToolUse guard: keeps regex out of refactors, and bounds Bash wall time.
 
-Two doors lead to the same mistake. Bash reaches for stream editors; serena's
-replace_in_files takes mode="regex". Measured on one real class rename across 28
+Three doors lead to the same mistake. Bash reaches for stream editors; serena's
+replace_in_files and replace_content both take mode="regex" — those two are the
+only regex-capable tools in its editing surface, the rest work on explicit line
+ranges. Measured on one real class rename across 28
 files, the regex path corrupted 3 of 72 sites — a log message, a test assertion
 and a comment — then burned 12 extra turns finding and repairing them, for 2.4x
 the tokens and 45% more wall time than rename_symbol. Both doors are guarded.
@@ -114,7 +116,7 @@ def deny(reason, escapable=True):
     )
 
 
-def guard_replace_in_files(tool_input):
+def guard_regex_replace(tool_input):
     # A preview writes nothing, so it is always allowed
     if tool_input.get("dry_run"):
         return
@@ -152,8 +154,8 @@ def guard_bash(tool_input):
 def main():
     payload = json.load(sys.stdin)
     tool_input = payload.get("tool_input") or {}
-    if str(payload.get("tool_name") or "").endswith("replace_in_files"):
-        guard_replace_in_files(tool_input)
+    if str(payload.get("tool_name") or "").endswith(("replace_in_files", "replace_content")):
+        guard_regex_replace(tool_input)
     else:
         guard_bash(tool_input)
 

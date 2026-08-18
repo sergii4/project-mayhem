@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|mcp__serena__replace_in_files",
+        "matcher": "Bash|mcp__serena__replace_in_files|mcp__serena__replace_content",
         "hooks": [
           {
             "type": "command",

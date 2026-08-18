@@ -1,7 +1,7 @@
 {
   "name": "project-mayhem",
-  "version": "0.2.3",
-  "description": "Operational efficiency enforcer. Bounds how the agent spends tool calls, context, and wall time: AST lookup over grep, the Edit tool over sed, a 60-second budget per unit of work.",
+  "version": "0.3.0",
+  "description": "Enforcement-only guard. Blocks in-place regex edits on source and unbounded Bash timeouts via PreToolUse. No injected instructions.",
   "keywords": [
     "efficiency",
     "hooks",

@@ -1,6 +1,6 @@
 {
   "name": "project-mayhem",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Enforcement-only guard. Denies regex-based refactors (stream editors and serena replace_in_files mode=regex) and unbounded Bash timeouts, so renames go through rename_symbol.",
   "keywords": [
     "efficiency",

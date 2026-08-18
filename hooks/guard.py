@@ -18,17 +18,50 @@ broken guard degrades to no guard rather than to a broken session.
 
 import json
 import re
+import shlex
 import sys
 
 MAX_TIMEOUT_MS = 60000
 ESCAPE = "# mayhem:allow"
 
-# In-place stream edits: sed -i / -i.bak / --in-place, and perl -i / -pi / -i.bak
-INPLACE = re.compile(
+EDITORS = {"sed", "gsed", "perl"}
+# -i, -i.bak, -pi, --in-place. Rejects -invalid, -E, -MList::Util.
+INPLACE_FLAG = re.compile(r"^--in-place|^-[a-zA-Z]{0,3}i(?![a-zA-Z])")
+# Tokens that end one command and begin another
+BREAK = {"|", "||", "&&", ";", "&", "(", ")", ">", ">>", "<", "\n"}
+# Text fallback, used only when the command will not parse
+INPLACE_TEXT = re.compile(
     r"\bsed\b[^|;&\n]*?\s-i(?![a-zA-Z])"
     r"|\bsed\b[^|;&\n]*?\s--in-place"
     r"|\bperl\b[^|;&\n]*?\s-[a-zA-Z]{0,3}i(?![a-zA-Z])"
 )
+
+
+def has_inplace_edit(command):
+    """True when a stream editor is actually invoked with an in-place flag.
+
+    Matching the raw string blocked any command that merely mentioned an
+    in-place edit — including writing documentation about one. Tokenising first
+    collapses quoted text into single tokens, so a stream editor named inside an
+    argument is no longer mistaken for one being run.
+    """
+    try:
+        lex = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lex.whitespace_split = True
+        lex.commenters = ""
+        tokens = list(lex)
+    except ValueError:
+        return bool(INPLACE_TEXT.search(command))  # unbalanced quotes: stay strict
+
+    for i, token in enumerate(tokens):
+        if token.rsplit("/", 1)[-1] not in EDITORS:
+            continue
+        for arg in tokens[i + 1:]:
+            if arg in BREAK:
+                break
+            if INPLACE_FLAG.match(arg):
+                return True
+    return False
 
 INPLACE_REASON = (
     "Blocked: in-place regex edit. A regex that half-matches corrupts the file "
@@ -94,7 +127,7 @@ def guard_bash(tool_input):
     if not isinstance(command, str) or ESCAPE in command:
         return
 
-    if INPLACE.search(command):
+    if has_inplace_edit(command):
         deny(INPLACE_REASON)
         return
 

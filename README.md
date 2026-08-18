@@ -1,62 +1,63 @@
 # project-mayhem
 
-An operational efficiency enforcer for Claude Code. It bounds how the agent spends tool calls, context, and wall time — not how it writes prose or code.
+A single guard that keeps regex out of refactors.
 
-That scope is deliberate. Terse output and minimal code are already well covered by other plugins; what nothing enforces is the operational layer, where the waste actually is: a whole file read to find one function, `grep -r` returning hits in comments, a subagent's raw output dumped into main context, a foreground command that hangs for ten minutes.
+Renaming a symbol with a regex looks like it works. The code compiles, the tests still pass, and three comments now say something false. This plugin refuses that operation and pushes the work onto a tool that understands the syntax tree.
 
-## What it enforces
+## What it does
 
-Everything is delivered through hooks, so it is active from the first message rather than waiting for the model to decide to load a skill. `SessionStart` injects the ruleset in `hooks/rules.md`, and `SubagentStart` injects the same file again because `SessionStart` context does not reach subagents.
+One `PreToolUse` hook, `hooks/guard.py`, on two tools:
 
-### Hard limits (the Bash guard)
+```
+sed -i / sed --in-place / perl -pi          deny
+replace_in_files  mode=regex                deny
+replace_in_files  mode=regex, dry_run=true  pass   preview writes nothing
+replace_in_files  mode=literal              pass   exact string, no hazard
+rename_symbol                               pass   the path the numbers favour
+Bash timeout above 60000ms                  deny
+slow command with no timeout                deny
+```
 
-`hooks/bash-guard.py` inspects every Bash call and acts on three cases:
+Two doors lead to the same mistake — Bash reaches for a stream editor, serena's `replace_in_files` takes `mode="regex"` — so both are guarded. `rename_symbol` is left alone, which is the point.
 
-- **In-place regex edits are denied.** `sed -i`, `sed --in-place`, `perl -pi` and friends. A regex that half-matches corrupts the file silently; the `Edit` tool matches an exact string and fails loudly instead. `ast-grep` is the escalation for structural multi-file rewrites.
-- **Timeouts over 60s are denied**, with the ceiling and both escapes named in the reason.
-- **Slow commands with no timeout are denied** — `npm install`, `docker build`, `mvn`, `pytest` and similar. The reason names both escapes: set a timeout, or run it in the background and poll.
+Append `# mayhem:allow` to any Bash command to skip every check, so a block is never a dead end.
 
-Every check is skipped if the command contains `# mayhem:allow`, so a block is never a dead end.
+## Why — the measurement
 
-Every verdict is a deny rather than a silent rewrite, and that is deliberate. `PreToolUse` also supports `updatedInput`, which would let the guard clamp an oversized timeout in place instead of refusing the call. But other plugins rewrite Bash through the same field — rtk prefixes commands that way — and two hooks rewriting one call have undefined precedence, so one of them is dropped with no error. A guard that silently loses is worse than one that makes you retype the timeout.
+One class rename across 28 files of a real Python codebase, six runs, grouped by the tool each run actually used:
 
-The guard fails open. An unparseable payload or any exception exits cleanly with no output — a broken guard degrades to no guard, never to a broken session.
+| path | tokens | time | turns | silent corruptions |
+|---|---|---|---|---|
+| `rename_symbol` | 128k – 915k | 9 – 104s | 2 – 20 | 0 |
+| regex | 1.30M – 1.45M | 147 – 187s | 26 – 27 | 3 |
 
-### Soft limits (the ruleset)
+**2.4× fewer tokens, 45% less time, no corruption.** There is no overlap between the groups: the worst `rename_symbol` run beat the best regex run on tokens, on time, and on turns.
 
-The injected rules cover what a hook cannot check: locate with `Grep`/`Glob`/`LSP` and read only to confirm, use `LSP findReferences` rather than `grep -r` for callers, read a slice rather than a whole file, send fan-out searches to a subagent so only the conclusion returns, never re-read a file to verify an edit that already succeeded.
+The three corruptions were a log message, a test assertion, and a comment. On that corpus, 3 of 72 occurrences of the symbol name live in comments or strings — invisible to a syntax check and to a reference count, which is exactly why they ship. The extra turns in the regex group are spent discovering and repairing that damage, so the correctness failure *is* the cost.
 
-They also close with the rule that keeps the rest from doing damage: thrift never shortens comprehension. A small diff in the wrong place is a second bug, not a saving.
+## What it deliberately does not do
 
-## The 60-second budget, honestly
+Earlier versions injected a ruleset into every session — search discipline, sliced reads, subagent delegation, a 60-second budget. It was measured across 12 A/B runs on a code search task and produced no attributable behavioural change: no whole-file reads in either arm, no subagent delegations, near-identical tool counts. The one replicated difference, −33% input tokens, lived entirely in `cache_read` and was bimodal — a prompt-cache artifact, not better tool use. An injection costing 687 tokens per session whose effect cannot be traced to any of its rules does not earn its place, so it was deleted.
 
-Hooks cannot preempt a running subagent — `SubagentStart` and `SubagentStop` only fire at the boundaries, and the `Agent` tool has no timeout parameter. So the budget splits three ways by what is actually achievable:
+What survives is the part that demonstrably changes an outcome.
 
-- **Enforced** on Bash, where `PreToolUse` can deny and rewrite. This is where ten-minute freezes usually come from.
-- **A contract** for subagents: the ruleset tells them to return partial results marked as such rather than dig silently past the budget. The model self-polices this.
-- **Measured** after the fact. `SubagentStop` carries no duration, but it does carry the agent's transcript path, and that file's birth-to-last-write span is its wall time. Over 60 seconds, you get a warning; under, silence.
+## Known limitations
+
+- **The stream-editor rule matches the raw command string.** Any command that merely *mentions* `sed -i` is refused, including writing documentation about it. Simple, no shell parsing, and a genuine false-positive class. Use `# mayhem:allow`.
+- **The timeout rules are unmeasured.** They never fired in any benchmark run. They rest on argument, not evidence.
+- **One task, one symbol, one repo.** The measurement above is a single well-characterised case, not a suite.
 
 ## Install
 
-This repo doubles as its own marketplace (`.claude-plugin/marketplace.json`), so no separate catalog repo is needed:
+This repo is its own marketplace, so no separate catalog is needed:
 
 ```shell
 /plugin marketplace add sergii4/project-mayhem
 /plugin install project-mayhem@project-mayhem
 ```
 
-If the install summary says `Run /reload-plugins to activate.`, run that.
+Requires `python3`. Claude Code only — the whole plugin is a hook. Restart after installing or updating; the hook registers at session start.
 
-Requires `python3` and `jq`, both standard on macOS with Homebrew. Claude Code only — the whole plugin is hooks, and hosts without hook support have nothing to load.
+Iterate locally with `claude --plugin-dir .`
 
-Two of the rules lean on tools the hooks themselves do not need. `ast-grep` (`brew install ast-grep`) is the structural-rewrite escalation named in the in-place-edit refusal; without it that refusal leaves only the `Edit` tool, which is exact-string rather than structural. And `LSP`-based lookup needs a language server configured for the file type — it errors out otherwise, which is why the ruleset carries a verified-grep fallback rather than pretending every language is covered.
-
-To iterate locally instead of on the installed copy:
-
-```shell
-claude --plugin-dir .
-```
-
-## Turning it off
-
-Say "stop mayhem" and the injected rules stop applying for the rest of the session. There is no flag file and no state to reset, because nothing re-injects after `SessionStart`. The Bash guard is a hook rather than an instruction, so it keeps running — use `# mayhem:allow` for individual commands, or disable the plugin.
+The `rename_symbol` and `replace_in_files` tools come from [serena](https://github.com/oraios/serena), configured per project. Without it the guard still blocks stream editors, and `gopls rename` covers Go from the shell.

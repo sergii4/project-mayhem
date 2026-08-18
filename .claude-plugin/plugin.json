@@ -1,7 +1,7 @@
 {
   "name": "project-mayhem",
-  "version": "0.3.0",
-  "description": "Enforcement-only guard. Blocks in-place regex edits on source and unbounded Bash timeouts via PreToolUse. No injected instructions.",
+  "version": "0.3.1",
+  "description": "Enforcement-only guard. Denies regex-based refactors (stream editors and serena replace_in_files mode=regex) and unbounded Bash timeouts, so renames go through rename_symbol.",
   "keywords": [
     "efficiency",
     "hooks",
